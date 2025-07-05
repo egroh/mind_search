@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dataset_setup import download_dataset_to_subfolder
 from groq_helpers import chat_groq, transcribe_wav, Recorder
 from search_engine import SearchEngine
 
@@ -32,6 +33,8 @@ DEMO_FOLDER.mkdir(exist_ok=True)
 if not any(DEMO_FOLDER.iterdir()):
     (DEMO_FOLDER / "readme.txt").write_text("This is a tiny demo file about apples.")
 
+download_dataset_to_subfolder("manisha717/dataset-of-pdf-files", DEMO_FOLDER)
+
 _engine = SearchEngine()
 _engine.ingest_folder(DEMO_FOLDER)
 
@@ -39,7 +42,6 @@ _engine.ingest_folder(DEMO_FOLDER)
 # ----------------------------------------------------------------------------
 # 1)  Worker thread (so the UI remains responsive)
 # ----------------------------------------------------------------------------
-# --- worker thread ----------------------------------------------------------
 class SearchWorker(QThread):
     results_ready = Signal(list)
 
