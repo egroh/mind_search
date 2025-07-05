@@ -1,34 +1,31 @@
 import sys
 from pathlib import Path
-import load_dotenv
 
-# ---- load .env automatically -----------------------------------------------
-load_dotenv.load_dotenv(
-    dotenv_path=Path(__file__).resolve().parent / ".env", override=False
-)
-# -----------------------------------------------------------------------------
-
+from dotenv import load_dotenv
+from PySide6.QtCore import Qt, QThread, Signal, Slot
 from PySide6.QtWidgets import (
     QApplication,
-    QMainWindow,
-    QWidget,
-    QVBoxLayout,
+    QDockWidget,
     QHBoxLayout,
     QLineEdit,
+    QListWidget,
+    QMainWindow,
     QPushButton,
     QTextEdit,
-    QDockWidget,
-    QListWidget,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, Slot, QThread, Signal
+from search_engine import SearchEngine
+
+load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env", override=False)
 
 from chat_agent import chat
-from search_engine import SearchEngine
 
 # ----------------------------------------------------------------------------
 # 0)  Ensure demo corpus exists + DB initialised
 # ----------------------------------------------------------------------------
-DEMO_FOLDER = Path("sample_docs")
+SCRIPT_DIR = Path(__file__).parent.resolve()
+DEMO_FOLDER = SCRIPT_DIR / "sample_docs"
 DEMO_FOLDER.mkdir(exist_ok=True)
 if not any(DEMO_FOLDER.iterdir()):
     (DEMO_FOLDER / "readme.txt").write_text("This is a tiny demo file about apples.")
