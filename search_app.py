@@ -1,9 +1,51 @@
-from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLineEdit, QPushButton, QTextEdit, QDockWidget, QLabel, QListWidget
-)
-from PySide6.QtCore import Qt, Slot
 import sys
+from pathlib import Path
+from PySide6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLineEdit,
+    QPushButton,
+    QTextEdit,
+    QDockWidget,
+    QListWidget,
+)
+from PySide6.QtCore import Qt, Slot, QThread, Signal
+
+from search_engine import SearchEngine
+
+# ----------------------------------------------------------------------------
+# 0)  Ensure demo corpus exists + DB initialised
+# ----------------------------------------------------------------------------
+DEMO_FOLDER = Path("sample_docs")
+DEMO_FOLDER.mkdir(exist_ok=True)
+if not any(DEMO_FOLDER.iterdir()):
+    (DEMO_FOLDER / "readme.txt").write_text("This is a tiny demo file about apples.")
+
+_engine = SearchEngine()
+_engine.ingest_folder(DEMO_FOLDER)
+
+
+# ----------------------------------------------------------------------------
+# 1)  Worker thread (so the UI remains responsive)
+# ----------------------------------------------------------------------------
+# --- worker thread ----------------------------------------------------------
+class SearchWorker(QThread):
+    results_ready = Signal(list)
+
+    def __init__(self, query: str, db_path: str = "search.db"):
+        super().__init__()
+        self._query = query
+        self._db_path = db_path
+
+    def run(self):
+        # Each thread gets its *own* SearchEngine → its own SQLite connection
+        engine = SearchEngine(self._db_path)
+        results = engine.query(self._query, k=10)
+        self.results_ready.emit(results)
+
 
 class SearchApp(QMainWindow):
     def __init__(self):
@@ -14,6 +56,7 @@ class SearchApp(QMainWindow):
         self._setup_ui()
         self._setup_chatbot_dock()
 
+    # ------------------- UI helpers ----------------------------------------
     def _setup_ui(self):
         # Central Widget
         central_widget = QWidget()
@@ -23,7 +66,7 @@ class SearchApp(QMainWindow):
         # Search Input and Button
         search_layout = QHBoxLayout()
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Enter your search query...")
+        self.search_input.setPlaceholderText("Enter your search query…")
         self.search_input.returnPressed.connect(self._perform_search)
         search_button = QPushButton("Search")
         search_button.clicked.connect(self._perform_search)
@@ -34,7 +77,7 @@ class SearchApp(QMainWindow):
 
         # Search Results Display
         self.results_display = QListWidget()
-        
+
         main_layout.addWidget(self.results_display)
 
         # Chatbot Toggle Button
@@ -45,15 +88,16 @@ class SearchApp(QMainWindow):
     def _setup_chatbot_dock(self):
         self.chatbot_dock = QDockWidget("Chatbot", self)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.chatbot_dock)
-        self.chatbot_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable | QDockWidget.DockWidgetFeature.DockWidgetMovable)
-        self.chatbot_dock.hide() # Start hidden
+        self.chatbot_dock.setFeatures(
+            QDockWidget.DockWidgetClosable | QDockWidget.DockWidgetMovable
+        )
+        self.chatbot_dock.hide()
 
         chatbot_content_widget = QWidget()
         chatbot_layout = QVBoxLayout(chatbot_content_widget)
 
         self.chat_history = QTextEdit()
         self.chat_history.setReadOnly(True)
-        self.chat_history.setPlaceholderText("Chat history...")
         chatbot_layout.addWidget(self.chat_history)
 
         chat_input_layout = QHBoxLayout()
@@ -69,36 +113,31 @@ class SearchApp(QMainWindow):
 
         self.chatbot_dock.setWidget(chatbot_content_widget)
 
+    # ------------------- Slots ---------------------------------------------
     @Slot()
     def _perform_search(self):
         query = self.search_input.text().strip()
         if not query:
-            self.results_display.clear()
-            self.results_display.addItem("Please enter a search query.")
             return
-
         self.results_display.clear()
-        self.results_display.addItem(f"Searching for: '{query}' using latent space embeddings...")
-        self.results_display.addItem("--- Mock Results ---")
+        self.results_display.addItem("Searching…")
 
-        # Mocking search results based on query
-        if "apple" in query.lower():
-            self.results_display.addItem("Result 1: Red Apple - Fruit")
-            self.results_display.addItem("Result 2: Apple Inc. - Technology Company")
-        elif "car" in query.lower():
-            self.results_display.addItem("Result A: Sports Car - Vehicle")
-            self.results_display.addItem("Result B: Electric Car - Vehicle")
-        else:
-            self.results_display.addItem("No specific mock results for this query. Try 'apple' or 'car'.")
-            self.results_display.addItem("Result X: Generic item related to your query.")
-            self.results_display.addItem("Result Y: Another generic item.")
+        self.worker = SearchWorker(query)
+        self.worker.results_ready.connect(self._display_results)
+        self.worker.start()
+
+    @Slot(list)
+    def _display_results(self, results: list):
+        self.results_display.clear()
+        if not results:
+            self.results_display.addItem("No results.")
+            return
+        for score, path, _ in results:
+            self.results_display.addItem(f"{score:.3f} – {path}")
 
     @Slot()
     def _toggle_chatbot(self):
-        if self.chatbot_dock.isVisible():
-            self.chatbot_dock.hide()
-        else:
-            self.chatbot_dock.show()
+        self.chatbot_dock.setVisible(not self.chatbot_dock.isVisible())
 
     @Slot()
     def _send_chat_message(self):
@@ -111,14 +150,21 @@ class SearchApp(QMainWindow):
 
         # Mock chatbot response
         if "hello" in message.lower():
-            self.chat_history.append("Chatbot: Hello there! How can I assist you with your search today?")
+            self.chat_history.append(
+                "Chatbot: Hello there! How can I assist you with your search today?"
+            )
         elif "search" in message.lower():
-            self.chat_history.append("Chatbot: I can help you refine your search. What are you looking for?")
+            self.chat_history.append(
+                "Chatbot: I can help you refine your search. What are you looking for?"
+            )
         elif "embedding" in message.lower():
-            self.chat_history.append("Chatbot: Latent space embeddings help us find semantically similar items. What would you like to know about them?")
+            self.chat_history.append(
+                "Chatbot: Latent space embeddings help us find semantically similar items. What would you like to know about them?"
+            )
         else:
-            self.chat_history.append("Chatbot: I'm a prototype chatbot. I can answer basic questions about search or embeddings.")
-
+            self.chat_history.append(
+                "Chatbot: I'm a prototype chatbot. I can answer basic questions about search or embeddings."
+            )
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
