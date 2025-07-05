@@ -1,8 +1,10 @@
+import itertools
+import os
 import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
-from PySide6.QtCore import Qt, QThread, Signal, Slot
+from PySide6.QtCore import Qt, QThread, Signal, Slot, QTimer
 from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,
@@ -15,11 +17,11 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from groq_helpers import chat_groq, transcribe_wav, Recorder
 from search_engine import SearchEngine
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env", override=False)
-
-from chat_agent import chat
 
 # ----------------------------------------------------------------------------
 # 0)  Ensure demo corpus exists + DB initialised
@@ -53,6 +55,28 @@ class SearchWorker(QThread):
         self.results_ready.emit(results)
 
 
+class VoiceWorker(QThread):
+    transcript_ready = Signal(str)
+
+    def __init__(self, wav_path: str):
+        super().__init__()
+        self._wav_path = wav_path
+
+    def run(self):
+        text = "Error"
+        try:
+            text = transcribe_wav(self._wav_path)
+        except Exception as e:
+            text = f"[STT error] {e}"
+            raise e
+        finally:
+            try:
+                os.remove(self._wav_path)
+            except FileNotFoundError:
+                pass
+        self.transcript_ready.emit(text)
+
+
 # --------------------------------------------------------------------------
 # Chat LLM worker  (runs Groq call off-UI thread)
 # --------------------------------------------------------------------------
@@ -66,7 +90,7 @@ class ChatWorker(QThread):
 
     def run(self):
         try:
-            reply = chat(self._messages)
+            reply = chat_groq(self._messages)
         except Exception as e:
             reply = f"[Groq API error] {e}"
         self.reply_ready.emit(reply)
@@ -80,6 +104,12 @@ class SearchApp(QMainWindow):
 
         self._setup_ui()
         self._setup_chatbot_dock()
+
+        self._recorder = Recorder()
+        self._blink_timer = QTimer(self)
+        self._blink_timer.timeout.connect(self._toggle_mic_icon)
+        self._mic_state_cycle = itertools.cycle(["Rec 🔴", "Rec 🎤"])
+        self._recording = False
 
         self._chat_history_messages = [
             {"role": "system", "content": "You are a helpful desktop-search assistant."}
@@ -97,11 +127,17 @@ class SearchApp(QMainWindow):
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Enter your search query…")
         self.search_input.returnPressed.connect(self._perform_search)
-        search_button = QPushButton("Search")
-        search_button.clicked.connect(self._perform_search)
+
+        search_btn = QPushButton("Search")
+        search_btn.clicked.connect(self._perform_search)
+
+        self.mic_btn = QPushButton("Voice 🎤")
+        self.mic_btn.setToolTip("Click to start/stop recording")
+        self.mic_btn.clicked.connect(self._toggle_recording)
 
         search_layout.addWidget(self.search_input)
-        search_layout.addWidget(search_button)
+        search_layout.addWidget(search_btn)
+        search_layout.addWidget(self.mic_btn)
         main_layout.addLayout(search_layout)
 
         # Search Results Display
@@ -163,6 +199,36 @@ class SearchApp(QMainWindow):
             return
         for score, path, _ in results:
             self.results_display.addItem(f"{score:.3f} – {path}")
+
+    @Slot()
+    def _toggle_recording(self):
+        if not self._recording:  # start
+            self.results_display.clear()
+            self.results_display.addItem("🔴 Recording… click again to stop")
+            self._recorder.start()
+            self._blink_timer.start(500)  # blink twice per second
+            self._recording = True
+        else:  # stop + transcribe
+            wav_path = self._recorder.stop_and_save()
+            self._blink_timer.stop()
+            self.mic_btn.setText("Voice 🎤")
+            self._recording = False
+
+            self.voice_worker = VoiceWorker(wav_path)
+            self.voice_worker.transcript_ready.connect(self._voice_to_search)
+            self.voice_worker.start()
+
+    def _toggle_mic_icon(self):
+        self.mic_btn.setText(next(self._mic_state_cycle))
+
+    @Slot(str)
+    def _voice_to_search(self, text: str):
+        self.results_display.clear()
+        if text.startswith("[STT error]"):
+            self.results_display.addItem(text)
+            return
+        self.search_input.setText(text)
+        self._perform_search()
 
     @Slot()
     def _toggle_chatbot(self):
