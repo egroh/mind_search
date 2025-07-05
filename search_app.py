@@ -1,8 +1,11 @@
 import sys
 from pathlib import Path
 import load_dotenv
+
 # ---- load .env automatically -----------------------------------------------
-load_dotenv.load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env", override=False)
+load_dotenv.load_dotenv(
+    dotenv_path=Path(__file__).resolve().parent / ".env", override=False
+)
 # -----------------------------------------------------------------------------
 
 from PySide6.QtWidgets import (
@@ -52,6 +55,7 @@ class SearchWorker(QThread):
         results = engine.query(self._query, k=10)
         self.results_ready.emit(results)
 
+
 # --------------------------------------------------------------------------
 # Chat LLM worker  (runs Groq call off-UI thread)
 # --------------------------------------------------------------------------
@@ -71,7 +75,6 @@ class ChatWorker(QThread):
         self.reply_ready.emit(reply)
 
 
-
 class SearchApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -82,8 +85,7 @@ class SearchApp(QMainWindow):
         self._setup_chatbot_dock()
 
         self._chat_history_messages = [
-            {"role": "system",
-             "content": "You are a helpful desktop-search assistant."}
+            {"role": "system", "content": "You are a helpful desktop-search assistant."}
         ]
 
     # ------------------- UI helpers ----------------------------------------
@@ -180,9 +182,7 @@ class SearchApp(QMainWindow):
         self.chat_input.clear()
 
         # Track convo for the LLM
-        self._chat_history_messages.append(
-            {"role": "user", "content": user_msg}
-        )
+        self._chat_history_messages.append({"role": "user", "content": user_msg})
 
         # Kick off background Groq request
         self.chat_worker = ChatWorker(self._chat_history_messages)
@@ -193,9 +193,7 @@ class SearchApp(QMainWindow):
     def _display_chat_reply(self, reply: str):
         self.chat_history.append(f"Assistant: {reply}")
         # Persist assistant turn for future context
-        self._chat_history_messages.append(
-            {"role": "assistant", "content": reply}
-        )
+        self._chat_history_messages.append({"role": "assistant", "content": reply})
 
 
 if __name__ == "__main__":

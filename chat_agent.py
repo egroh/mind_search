@@ -11,7 +11,7 @@ import os
 # Choose any production model from https://console.groq.com/docs/models
 MODEL_ID = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
-_client = Groq()            # uses GROQ_API_KEY env var
+_client = Groq()  # uses GROQ_API_KEY env var
 
 
 def chat(messages: list[dict]) -> str:
