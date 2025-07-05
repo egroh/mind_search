@@ -1,4 +1,5 @@
 """One‑stop helper for ingesting folders and running queries."""
+
 from pathlib import Path
 import os
 from db import init_db, add_document, search
@@ -9,7 +10,9 @@ class SearchEngine:
         self.con = init_db(db_path)
 
     # ----- Corpus ingestion -------------------------------------------------
-    def ingest_folder(self, folder: str | os.PathLike, exts: tuple[str, ...] = (".txt", ".md")) -> None:
+    def ingest_folder(
+        self, folder: str | os.PathLike, exts: tuple[str, ...] = (".txt", ".md")
+    ) -> None:
         folder = Path(folder)
         for fp in folder.rglob("*"):
             if fp.suffix.lower() not in exts:

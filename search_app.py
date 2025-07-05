@@ -1,5 +1,10 @@
 import sys
 from pathlib import Path
+import load_dotenv
+# ---- load .env automatically -----------------------------------------------
+load_dotenv.load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env", override=False)
+# -----------------------------------------------------------------------------
+
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -14,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Slot, QThread, Signal
 
+from chat_agent import chat
 from search_engine import SearchEngine
 
 # ----------------------------------------------------------------------------
@@ -46,6 +52,25 @@ class SearchWorker(QThread):
         results = engine.query(self._query, k=10)
         self.results_ready.emit(results)
 
+# --------------------------------------------------------------------------
+# Chat LLM worker  (runs Groq call off-UI thread)
+# --------------------------------------------------------------------------
+class ChatWorker(QThread):
+    reply_ready = Signal(str)
+
+    def __init__(self, messages: list[dict]):
+        super().__init__()
+        # copy so UI can keep appending while thread runs
+        self._messages = messages.copy()
+
+    def run(self):
+        try:
+            reply = chat(self._messages)
+        except Exception as e:
+            reply = f"[Groq API error] {e}"
+        self.reply_ready.emit(reply)
+
+
 
 class SearchApp(QMainWindow):
     def __init__(self):
@@ -55,6 +80,11 @@ class SearchApp(QMainWindow):
 
         self._setup_ui()
         self._setup_chatbot_dock()
+
+        self._chat_history_messages = [
+            {"role": "system",
+             "content": "You are a helpful desktop-search assistant."}
+        ]
 
     # ------------------- UI helpers ----------------------------------------
     def _setup_ui(self):
@@ -141,30 +171,32 @@ class SearchApp(QMainWindow):
 
     @Slot()
     def _send_chat_message(self):
-        message = self.chat_input.text().strip()
-        if not message:
+        user_msg = self.chat_input.text().strip()
+        if not user_msg:
             return
 
-        self.chat_history.append(f"You: {message}")
+        # Update GUI immediately
+        self.chat_history.append(f"You: {user_msg}")
         self.chat_input.clear()
 
-        # Mock chatbot response
-        if "hello" in message.lower():
-            self.chat_history.append(
-                "Chatbot: Hello there! How can I assist you with your search today?"
-            )
-        elif "search" in message.lower():
-            self.chat_history.append(
-                "Chatbot: I can help you refine your search. What are you looking for?"
-            )
-        elif "embedding" in message.lower():
-            self.chat_history.append(
-                "Chatbot: Latent space embeddings help us find semantically similar items. What would you like to know about them?"
-            )
-        else:
-            self.chat_history.append(
-                "Chatbot: I'm a prototype chatbot. I can answer basic questions about search or embeddings."
-            )
+        # Track convo for the LLM
+        self._chat_history_messages.append(
+            {"role": "user", "content": user_msg}
+        )
+
+        # Kick off background Groq request
+        self.chat_worker = ChatWorker(self._chat_history_messages)
+        self.chat_worker.reply_ready.connect(self._display_chat_reply)
+        self.chat_worker.start()
+
+    @Slot(str)
+    def _display_chat_reply(self, reply: str):
+        self.chat_history.append(f"Assistant: {reply}")
+        # Persist assistant turn for future context
+        self._chat_history_messages.append(
+            {"role": "assistant", "content": reply}
+        )
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

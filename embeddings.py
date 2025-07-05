@@ -1,6 +1,7 @@
 """Light‑weight, deterministic text → vector function.
 Replace this later with your ONNX/QNN model; keep the API.
 """
+
 import hashlib
 import numpy as np
 
