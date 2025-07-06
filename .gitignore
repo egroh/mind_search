@@ -1,3 +1,7 @@
 .env
 sample_docs
 __pycache__
+
+# Dataset
+latent_search/raw_data
+
