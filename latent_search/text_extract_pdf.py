@@ -1,41 +1,30 @@
-import os
-import fitz  # PyMuPDF
-from tqdm import tqdm
+"""
+Extract raw text from PDFs using pdfminer.six (pure-Python; works on Win ARM).
+Install with:
+    pip install pdfminer.six
+"""
 
-# Maximum number of PDFs to process
+from pathlib import Path
+from pdfminer.high_level import extract_text
+
+# Maximum number of PDFs to process in one go
 MAX_FILES = 50
 
-# Function to extract text from PDFs in a directory (up to MAX_FILES)
 def extract_texts_from_dir(directory: str) -> dict[str, str]:
-    texts = {}
-    # Gather all PDF paths
-    pdf_paths = []
-    for root, _, files in os.walk(directory):
-        for file in files:
-            if file.lower().endswith('.pdf'):
-                pdf_paths.append(os.path.join(root, file))
+    """
+    Walk `directory`, find up to MAX_FILES .pdf files,
+    and return a dict mapping filename → full extracted text.
+    """
+    texts: dict[str, str] = {}
+    pdf_paths = list(Path(directory).rglob("*.pdf"))[:MAX_FILES]
 
-    # Limit to the first MAX_FILES PDFs
-    pdf_paths = pdf_paths[:MAX_FILES]
+    for p in pdf_paths:
+        try:
+            # pdfminer handles password-free PDFs; slow but reliable
+            text = extract_text(p)
+            if text:
+                texts[p.name] = text
+        except Exception as e:
+            print(f"[extract_texts_from_dir] failed on {p}: {e}")
 
-    # Iterate with progress bar
-    for path in tqdm(pdf_paths, desc="Reading PDFs", unit="file", leave=True):
-        doc = fitz.open(path)
-        text = "\n".join(page.get_text() for page in doc)
-        texts[os.path.basename(path)] = text
     return texts
-#
-# if __name__ == '__main__':
-#     # Directory containing PDF files; specify your path here
-#     PDF_DIR = 'Pdf'
-#
-#     # Extract texts (up to MAX_FILES) with progress bar
-#     texts = extract_texts_from_dir(PDF_DIR)
-#     if not texts:
-#         print(f"No PDF files found in directory: {PDF_DIR}")
-#         exit(0)
-#
-#     # Print the first file's text
-#     first_fname = next(iter(texts))
-#     print(f"--- Text for {first_fname} ---\n")
-#     print(texts[first_fname])

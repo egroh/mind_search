@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 
 from general.dataset_setup import download_dataset_to_subfolder
 from general.groq_helpers import chat_groq, transcribe_wav, Recorder
-from general.search_engine import SearchEngine
+from latent_search.search_engine import SearchEngine
 from general.win11_theme import apply_win11_theme
 
 print(f"[DEBUG] Python {platform.python_version()} on {platform.platform()}")
@@ -44,9 +44,7 @@ if not any(DEMO_FOLDER.iterdir()):
 
 download_dataset_to_subfolder("manisha717/dataset-of-pdf-files", DEMO_FOLDER)
 
-_engine = SearchEngine()
-_engine.ingest_folder(DEMO_FOLDER)
-
+_engine = SearchEngine(DEMO_FOLDER)
 
 # ----------------------------------------------------------------------------
 # 1)  Worker thread (so the UI remains responsive)
@@ -54,15 +52,13 @@ _engine.ingest_folder(DEMO_FOLDER)
 class SearchWorker(QThread):
     results_ready = Signal(str, list)  # query, results
 
-    def __init__(self, query: str, db_path: str = "search.db"):
+    def __init__(self, query: str):
         super().__init__()
         self._query = query
-        self._db_path = db_path
 
     def run(self):
         # Each thread gets its *own* SearchEngine → its own SQLite connection
-        engine = SearchEngine(self._db_path)
-        results = engine.query(self._query, k=10)
+        results = _engine.search(self._query, k=10)
         self.results_ready.emit(self._query, results)
 
 
