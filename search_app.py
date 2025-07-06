@@ -1,10 +1,12 @@
 import itertools
 import os
+import platform
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
+import keyboard
 from PySide6.QtCore import Qt, QThread, Signal, Slot, QTimer
+from PySide6.QtGui import QGuiApplication, QPalette, QCursor
 from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,
@@ -21,14 +23,17 @@ from PySide6.QtWidgets import (
 from dataset_setup import download_dataset_to_subfolder
 from groq_helpers import chat_groq, transcribe_wav, Recorder
 from search_engine import SearchEngine
+from win11_theme import apply_win11_theme
 
-load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env", override=False)
+print(f"[DEBUG] Python {platform.python_version()} on {platform.platform()}")
+print(f"[DEBUG] FIRST 5 PATH entries → {os.environ.get('PATH', '').split(';')[:5]}")
+print(f"[DEBUG] OVERLAY flag → {'--overlay' in sys.argv}")
 
 # ----------------------------------------------------------------------------
 # 0)  Ensure demo corpus exists + DB initialised
 # ----------------------------------------------------------------------------
 SCRIPT_DIR = Path(__file__).parent.resolve()
-DEMO_FOLDER = SCRIPT_DIR / "sample_docs"
+DEMO_FOLDER = SCRIPT_DIR / "sample_files"
 DEMO_FOLDER.mkdir(exist_ok=True)
 if not any(DEMO_FOLDER.iterdir()):
     (DEMO_FOLDER / "readme.txt").write_text("This is a tiny demo file about apples.")
@@ -99,13 +104,32 @@ class ChatWorker(QThread):
 
 
 class SearchApp(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Latent Space Search Application")
-        self.setGeometry(100, 100, 800, 600)
+    hotkeyFired = Signal()
 
+    def __init__(self, *, overlay: bool = False):
+        super().__init__()
+        apply_win11_theme(self, palette="auto", acrylic=True)
+
+        self._overlay_mode = overlay  # <— NEW
+        self.setWindowTitle("Latent Space Search")
         self._setup_ui()
         self._setup_chatbot_dock()
+
+        # NEW — cosmetic + hot-key
+        if self._overlay_mode:
+            self._configure_overlay()
+        if platform.system() == "Windows":
+            self.hotkeyFired.connect(self._toggle_overlay)
+            # ── GLOBAL HOTKEY via `keyboard` ────────────────────────────────────
+            try:
+                keyboard.add_hotkey(
+                    'ctrl+alt+x',
+                    lambda: self.hotkeyFired.emit(),
+                    suppress=True,
+                )
+                print("[DEBUG] keyboard hotkey registered → Ctrl+Alt+Xxxxxxxxxxxx")
+            except Exception as e:
+                print(f"[DEBUG] keyboard.hotkey failed: {e}")
 
         self._recorder = Recorder()
         self._blink_timer = QTimer(self)
@@ -260,9 +284,73 @@ class SearchApp(QMainWindow):
         # Persist assistant turn for future context
         self._chat_history_messages.append({"role": "assistant", "content": reply})
 
+    def _configure_overlay(self):
+        """Apply frameless flags and centre on the screen where the mouse is."""
+        self.setWindowFlags(Qt.FramelessWindowHint |
+                            Qt.Tool |
+                            Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+
+        # screen under the cursor
+        cursor_pos = QCursor.pos()
+        scr = QGuiApplication.screenAt(cursor_pos) or QGuiApplication.primaryScreen()
+        geo = scr.availableGeometry()
+
+        bar_h = 10
+        w = int(geo.width() * 0.40)
+        h = 500
+        x = geo.x() + (geo.width() - w) // 2
+        y = geo.y() + geo.height() - bar_h - h - 8
+        self.setGeometry(x, y, w, h)
+
+    # ---------- NEW: theme helper (run once) ----------------------
+    def _apply_system_theme(self):
+        # crude check: Windows dark mode registry value (0 = dark)
+        import winreg
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as k:
+                v, _ = winreg.QueryValueEx(k, "AppsUseLightTheme")
+            if v == 0:
+                QApplication.setStyle("Fusion")
+                dark = QApplication.palette()
+                dark.setColor(QPalette.Window, Qt.black)
+                dark.setColor(QPalette.WindowText, Qt.white)
+                QApplication.setPalette(dark)
+        except OSError:
+            pass  # fallback: leave default
+
+    def _animate_visibility(self, show: bool):
+        """Instantly show or hide – no fade (debug mode)."""
+        if show:
+            self.setWindowOpacity(1.0)
+            self._configure_overlay()  # still centre on the active monitor
+            self.show()
+            self.raise_()
+            self.activateWindow()
+        else:
+            self.hide()
+
+    def _toggle_overlay(self):
+        if self.isVisible():
+            self._animate_visibility(False)
+        else:
+            self._configure_overlay()  # centre every time
+            self._animate_visibility(True)
+
+    def closeEvent(self, ev):
+        super().closeEvent(ev)
+
 
 if __name__ == "__main__":
+    overlay_flag = "--overlay" in sys.argv
+    if overlay_flag:
+        sys.argv.remove("--overlay")
+
     app = QApplication(sys.argv)
-    window = SearchApp()
-    window.show()
+    window = SearchApp(overlay=overlay_flag)
+    if overlay_flag:
+        window._animate_visibility(True)  # start shown & animated
+    else:
+        window.show()
     sys.exit(app.exec())

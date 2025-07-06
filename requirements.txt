@@ -5,3 +5,5 @@ groq==0.29.0
 sounddevice==0.5.2
 soundfile==0.13.1
 kagglehub==0.3.12
+BlurWindow==1.2.1
+keyboard==0.13.5
