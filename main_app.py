@@ -187,7 +187,7 @@ class SearchApp(QMainWindow):
                     lambda: self.hotkeyFired.emit(),
                     suppress=True,
                 )
-                print("[DEBUG] keyboard hotkey registered → Ctrl+Alt+Xxxxxxxxxxxx")
+                print("[DEBUG] keyboard hotkey registered → Ctrl+Alt+X")
             except Exception as e:
                 print(f"[DEBUG] keyboard.hotkey failed: {e}")
 
