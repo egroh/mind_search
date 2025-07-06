@@ -13,10 +13,12 @@ from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QListWidget,
     QMainWindow,
     QPushButton,
+    QScrollArea,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -50,7 +52,7 @@ _engine.ingest_folder(DEMO_FOLDER)
 # 1)  Worker thread (so the UI remains responsive)
 # ----------------------------------------------------------------------------
 class SearchWorker(QThread):
-    results_ready = Signal(list)
+    results_ready = Signal(str, list)  # query, results
 
     def __init__(self, query: str, db_path: str = "search.db"):
         super().__init__()
@@ -61,7 +63,7 @@ class SearchWorker(QThread):
         # Each thread gets its *own* SearchEngine → its own SQLite connection
         engine = SearchEngine(self._db_path)
         results = engine.query(self._query, k=10)
-        self.results_ready.emit(results)
+        self.results_ready.emit(self._query, results)
 
 
 class VoiceWorker(QThread):
@@ -103,6 +105,58 @@ class ChatWorker(QThread):
         except Exception as e:
             reply = f"[Groq API error] {e}"
         self.reply_ready.emit(reply)
+
+
+class ResultCard(QWidget):
+    def __init__(self, score: float, path: str, content: str):
+        super().__init__()
+        self.path = path
+        self.content = content
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        # Icon
+        icon_label = QLabel()
+        icon_label.setPixmap(self._get_icon_for_file(path))
+        layout.addWidget(icon_label)
+
+        # Text content
+        text_layout = QVBoxLayout()
+        text_layout.setSpacing(2)
+
+        title_label = QLabel(f"<b>{Path(path).name}</b>")
+        title_label.setTextFormat(Qt.RichText)
+        text_layout.addWidget(title_label)
+
+        snippet_label = QLabel(self._get_snippet(content))
+        snippet_label.setWordWrap(True)
+        text_layout.addWidget(snippet_label)
+
+        layout.addLayout(text_layout, 1)
+
+        # Score
+        score_label = QLabel(f"<i>{score:.3f}</i>")
+        score_label.setTextFormat(Qt.RichText)
+        layout.addWidget(score_label)
+
+    def _get_icon_for_file(self, path: str):
+        # You would have a more robust way of getting icons,
+        # for now, we'll use a simple placeholder.
+        # You can use QIcon.fromTheme() for system icons
+        from PySide6.QtGui import QIcon
+        import mimetypes
+
+        mime_type, _ = mimetypes.guess_type(path)
+        if mime_type:
+            if mime_type.startswith("image"):
+                return QIcon.fromTheme("image-x-generic").pixmap(32, 32)
+            if mime_type == "application/pdf":
+                return QIcon.fromTheme("application-pdf").pixmap(32, 32)
+        return QIcon.fromTheme("text-x-generic").pixmap(32, 32)
+
+    def _get_snippet(self, content: str, max_len=150):
+        return content[:max_len] + "..." if len(content) > max_len else content
 
 
 class SearchApp(QMainWindow):
@@ -177,9 +231,13 @@ class SearchApp(QMainWindow):
         main_layout.addLayout(search_layout)
 
         # Search Results Display
-        self.results_display = QListWidget()
+        self.results_area = QScrollArea()
+        self.results_area.setWidgetResizable(True)
+        self.results_widget = QWidget()
+        self.results_layout = QVBoxLayout(self.results_widget)
+        self.results_area.setWidget(self.results_widget)
 
-        main_layout.addWidget(self.results_display)
+        main_layout.addWidget(self.results_area)
 
         # Chatbot Toggle Button
         self.chat_button = QPushButton("Toggle Chatbot")
@@ -223,22 +281,40 @@ class SearchApp(QMainWindow):
     def _perform_search(self):
         query = self.search_input.text().strip()
         if not query:
+            self._clear_results()
             return
-        self.results_display.clear()
-        self.results_display.addItem("Searching…")
+
+        # Don't show "Searching..." if results are already displayed
+        if self.results_layout.count() == 0:
+            self._clear_results()
+            self.results_layout.addWidget(QLabel("Searching…"))
 
         self.worker = SearchWorker(query)
         self.worker.results_ready.connect(self._display_results)
         self.worker.start()
 
-    @Slot(list)
-    def _display_results(self, results: list):
-        self.results_display.clear()
-        if not results:
-            self.results_display.addItem("No results.")
+    def _clear_results(self):
+        while self.results_layout.count():
+            child = self.results_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+    @Slot(str, list)
+    def _display_results(self, query: str, results: list):
+        # If the query has changed since the search was started, ignore these results
+        if query != self.search_input.text().strip():
             return
-        for score, path, _ in results:
-            self.results_display.addItem(f"{score:.3f} – {path}")
+
+        self._clear_results()
+        if not results:
+            self.results_layout.addWidget(QLabel("No results."))
+            return
+
+        for score, path, content in results:
+            card = ResultCard(score, path, content)
+            self.results_layout.addWidget(card)
+
+        self.results_layout.addStretch()  # Pushes cards to the top
 
     @Slot()
     def _toggle_recording(self):

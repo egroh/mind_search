@@ -9,6 +9,10 @@ class SearchEngine:
     def __init__(self, db_path: str = "search.db") -> None:
         self.con = init_db(db_path)
 
+    def doc_count(self) -> int:
+        """Returns the number of documents in the database."""
+        return self.con.execute("SELECT COUNT(id) FROM docs").fetchone()[0]
+
     # ----- Corpus ingestion -------------------------------------------------
     def ingest_folder(
         self, folder: str | os.PathLike, exts: tuple[str, ...] = (".txt", ".md")
