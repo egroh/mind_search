@@ -2,7 +2,7 @@
 
 from pathlib import Path
 import os
-from db import init_db, add_document, search
+from general.db import init_db, add_document, search
 
 
 class SearchEngine:

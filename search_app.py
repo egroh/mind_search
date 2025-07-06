@@ -21,9 +21,9 @@ from PySide6.QtWidgets import (
 )
 
 from dataset_setup import download_dataset_to_subfolder
-from groq_helpers import chat_groq, transcribe_wav, Recorder
-from search_engine import SearchEngine
-from win11_theme import apply_win11_theme
+from general.groq_helpers import chat_groq, transcribe_wav, Recorder
+from general.search_engine import SearchEngine
+from general.win11_theme import apply_win11_theme
 
 print(f"[DEBUG] Python {platform.python_version()} on {platform.platform()}")
 print(f"[DEBUG] FIRST 5 PATH entries → {os.environ.get('PATH', '').split(';')[:5]}")
