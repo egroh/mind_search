@@ -8,14 +8,10 @@
 #
 # Requirements: Windows 11 (build ≥ 22000), PySide6 ≥ 6.4
 # --------------------------------------------------------------------------
-
-from __future__ import annotations
 import ctypes
 import platform
-import sys
 
 from PySide6.QtGui import QPalette, QColor
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QWidget
 
 
@@ -78,11 +74,6 @@ ACCENT_ENABLE_ACRYLIC_BLUR = 6     # Acrylic backdrop (build 22000+)
 ACCENT_ENABLE_BLURBEHIND   = 3     # fallback for older builds
 WCA_ACCENT_POLICY          = 19
 
-_user32 = ctypes.windll.user32
-_SetWindowCompositionAttribute = _user32.SetWindowCompositionAttribute
-_SetWindowCompositionAttribute.restype = ctypes.c_int
-
-
 # ──────────────────────────────────────────────────────────────────────────
 # ❸  Public function
 # --------------------------------------------------------------------------
@@ -109,29 +100,34 @@ def apply_win11_theme(
 
     # ---- 2. Global stylesheet (for the whole app) -----------------------
     # Rounded corners + neutral spacing/fonts everywhere
+    if platform.system() == "Windows":
+        background = "transparent"
+    else:
+        background = "solid"
+
     STYLE = f"""
         /* make the entire window see‐through */
         * {{
-            background: transparent;
+            background: {background};
             border: none;
             border-radius: 7px;
-            padding: 6px;
+            padding: 4px 8px;
             font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
             font-size: 16px;
         }}
         QLineEdit {{
-            /* a slightly opaque input box */
             background-color: rgba(255,255,255,0.03);
-            padding: 6px 10px;
+            border: 1px solid;
         }}
         QListWidget, QListView {{
-            background: transparent;
+            
         }}
         QPushButton {{
+            border: 1px solid;
             background-color: rgba(255,255,255,0.04);
         }}
         QPushButton:hover {{
-            background-color: rgba(255,255,255,0.08);
+            background-color: rgba(255,255,0,1.0);
         }}
     """
     widget.setStyleSheet(STYLE)
@@ -140,9 +136,9 @@ def apply_win11_theme(
     if acrylic and platform.system() == "Windows":
         hwnd = int(widget.winId())        # PySide returns WId → int
         try:
-            from BlurWindow.blurWindow import blur
+            from BlurWindow.blurWindow import GlobalBlur
             # apply blur to your main window:
-            blur(hwnd)
+            GlobalBlur(hwnd,Dark=is_dark,QWidget=widget)
             print("[DEBUG] BlurWindow: acrylic blur applied")
         except ImportError:
             print("[DEBUG] BlurWindow not installed—falling back to solid background")
