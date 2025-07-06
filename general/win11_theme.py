@@ -79,6 +79,11 @@ def apply_win11_theme(
     pal = _make_palette(_DARK if is_dark else _LIGHT)
     widget.setPalette(pal)
 
+    # ─── derive a 50%‐alpha border color ──────────────────────────────
+    colors = _DARK if is_dark else _LIGHT
+    raw_border = colors["BORDER"].lstrip("#")
+    border_color = f"#80{raw_border}"  # 0x80 = 50% opacity
+
     # ---- 2. Global stylesheet (for the whole app) -----------------------
     # Rounded corners + neutral spacing/fonts everywhere
     if platform.system() == "Windows":
@@ -98,17 +103,17 @@ def apply_win11_theme(
         }}
         QLineEdit {{
             background-color: rgba(255,255,255,0.03);
-            border: 1px solid;
+            border: 1px solid {border_color};
         }}
         QListWidget, QListView {{
             
         }}
         QPushButton {{
-            border: 1px solid;
+            border: 1px solid {border_color};
             background-color: rgba(255,255,255,0.04);
         }}
         QPushButton:hover {{
-            background-color: rgba(255,255,0,1.0);
+            background-color: rgba(255,255,255,1.0);
         }}
     """
     widget.setStyleSheet(STYLE)

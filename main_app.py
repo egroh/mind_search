@@ -3,8 +3,10 @@ import os
 import platform
 import sys
 from pathlib import Path
-
+from dotenv import load_dotenv
 import keyboard
+load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env", override=False)
+
 from PySide6.QtCore import Qt, QThread, Signal, Slot, QTimer
 from PySide6.QtGui import QGuiApplication, QPalette, QCursor
 from PySide6.QtWidgets import (
@@ -20,7 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dataset_setup import download_dataset_to_subfolder
+from general.dataset_setup import download_dataset_to_subfolder
 from general.groq_helpers import chat_groq, transcribe_wav, Recorder
 from general.search_engine import SearchEngine
 from general.win11_theme import apply_win11_theme
@@ -110,7 +112,11 @@ class SearchApp(QMainWindow):
         super().__init__()
         apply_win11_theme(self, palette="auto", acrylic=True)
 
-        self._overlay_mode = overlay  # <— NEW
+        self._overlay_mode = overlay
+
+        if not self._overlay_mode:
+            self.resize(1200, 800)
+
         self.setWindowTitle("Latent Space Search")
         self._setup_ui()
         self._setup_chatbot_dock()
