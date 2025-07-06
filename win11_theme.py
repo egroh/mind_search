@@ -56,25 +56,6 @@ def _make_palette(colors: dict[str, str]) -> QPalette:
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# ❷  Win32 Acrylic / Mica helpers
-# --------------------------------------------------------------------------
-class ACCENTPOLICY(ctypes.Structure):
-    _fields_ = [("AccentState", ctypes.c_int),
-                ("AccentFlags", ctypes.c_int),
-                ("GradientColor", ctypes.c_uint32),
-                ("AnimationId", ctypes.c_int)]
-
-class WINDOWCOMPOSITIONATTRIBDATA(ctypes.Structure):
-    _fields_ = [("Attrib", ctypes.c_int),
-                ("pvData", ctypes.c_void_p),
-                ("cbData", ctypes.c_size_t)]
-
-# constants
-ACCENT_ENABLE_ACRYLIC_BLUR = 6     # Acrylic backdrop (build 22000+)
-ACCENT_ENABLE_BLURBEHIND   = 3     # fallback for older builds
-WCA_ACCENT_POLICY          = 19
-
-# ──────────────────────────────────────────────────────────────────────────
 # ❸  Public function
 # --------------------------------------------------------------------------
 def apply_win11_theme(
@@ -137,8 +118,9 @@ def apply_win11_theme(
         hwnd = int(widget.winId())        # PySide returns WId → int
         try:
             from BlurWindow.blurWindow import GlobalBlur
+
             # apply blur to your main window:
-            GlobalBlur(hwnd,Dark=is_dark,QWidget=widget)
+            GlobalBlur(hwnd, Dark=is_dark, QWidget=widget)
             print("[DEBUG] BlurWindow: acrylic blur applied")
         except ImportError:
             print("[DEBUG] BlurWindow not installed—falling back to solid background")
