@@ -158,7 +158,11 @@ class SearchApp(QMainWindow):
         search_layout = QHBoxLayout()
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Enter your search query…")
-        self.search_input.returnPressed.connect(self._perform_search)
+        self.search_input.textChanged.connect(self._debounced_search)
+
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.timeout.connect(self._perform_search)
 
         search_btn = QPushButton("Search")
         search_btn.clicked.connect(self._perform_search)
@@ -209,6 +213,10 @@ class SearchApp(QMainWindow):
         chatbot_layout.addLayout(chat_input_layout)
 
         self.chatbot_dock.setWidget(chatbot_content_widget)
+
+    @Slot()
+    def _debounced_search(self):
+        self._search_timer.start(100)
 
     # ------------------- Slots ---------------------------------------------
     @Slot()
