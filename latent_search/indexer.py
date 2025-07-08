@@ -10,7 +10,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from PySide6.QtCore import Signal, QObject
 
-from latent_search.embedder import embed_text
+from latent_search.embedder import embed_text, embed_image, embed_audio
 from latent_search.text_extract_pdf import extract_texts_from_dir
 
 EMB_DIR      = Path("embeddings")
@@ -43,7 +43,12 @@ class FileIndexer(FileSystemEventHandler):
             sims = self.matrix @ q
             best = np.argsort(-sims)[:k]
             # ← return triples (score, path, content)
-            return [(float(sims[i]), self.paths[i], self.texts[self.paths[i]]) for i in best]
+            results = []
+            for i in best:
+                p = self.paths[i]
+                txt = self.texts.get(p, "")  # empty for images/audio
+                results.append((float(sims[i]), p, txt))
+            return results
 
     # --------------- build/rebuild -----------------------------------------
     def _load_or_build(self):
@@ -115,29 +120,28 @@ class FileIndexer(FileSystemEventHandler):
                 EMB_META.write_text(json.dumps(self.paths))
 
     def _index_file(self, fp: Path):
-        if fp.suffix.lower() not in {".txt", ".md", ".pdf"}:
-            return
-        try:
-            if fp.suffix.lower() == ".pdf":
-                txt = extract_texts_from_dir(fp.parent.as_posix()).get(fp.name, "")
-            else:
-                txt = fp.read_text(errors="ignore")
-            if not txt.strip():
-                return
-            vec = embed_text(txt)
-        except Exception as e:
-            print("[Indexer] embed failed:", e)
-            return
+        vec, txt = self._embed_file(fp)
+        if vec is None:
+            return  # unsupported or empty
 
         p = fp.as_posix()
         with self.lock:
             if p in self.paths:
+                # update existing
                 idx = self.paths.index(p)
                 self.matrix[idx] = vec
-                self.texts[p]     = txt      # ← update raw text
+                if txt:
+                    self.texts[p] = txt
+                print(f"[Indexer] updated {p}")
             else:
+                # append new
                 self.paths.append(p)
                 self.matrix = np.vstack([self.matrix, vec])
-                self.texts[p] = txt
+                if txt:
+                    self.texts[p] = txt
+                print(f"[Indexer] added   {p}")
+
+            # persist changes
             np.save(EMB_NPY_PATH, self.matrix)
             EMB_META.write_text(json.dumps(self.paths))
+

@@ -1,6 +1,6 @@
 onnxruntime-qnn==1.21.1
 onnx==1.18.0
-numpy>=2.3,<3                # first series with ARM64 wheels
+numpy
 PySide6==6.9.1
 transformers>=4.42
 tqdm>=4.66
@@ -13,3 +13,5 @@ BlurWindow==1.2.1
 keyboard==0.13.5
 watchdog==6.0.0
 pdfminer.six
+pillow==11.3.0
+librosa==0.11.0
