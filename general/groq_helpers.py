@@ -1,5 +1,6 @@
 from pathlib import Path
-import os, tempfile, sounddevice as sd, soundfile as sf
+import os, tempfile
+# import sounddevice as sd, soundfile as sf
 
 import numpy as np
 from groq import Groq
@@ -77,12 +78,12 @@ class Recorder:
 
     def start(self):
         self._frames.clear()
-        self._stream = sd.InputStream(
-            samplerate=self.fs,
-            channels=1,
-            dtype="int16",
-            callback=self._callback,
-        )
+        # self._stream = sd.InputStream(
+        #     samplerate=self.fs,
+        #     channels=1,
+        #     dtype="int16",
+        #     callback=self._callback,
+        # )
         self._stream.start()
 
     def stop_and_save(self) -> str:
@@ -97,5 +98,5 @@ class Recorder:
 
         audio = np.concatenate(self._frames, axis=0)
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-        sf.write(tmp.name, audio, self.fs, subtype="PCM_16")  # single call
+#        sf.write(tmp.name, audio, self.fs, subtype="PCM_16")  # single call
         return tmp.name
