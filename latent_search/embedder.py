@@ -1,93 +1,134 @@
-"""
-embedder.py
------------
-Text → 384-D unit vector using ONNX Runtime.
-Falls back gracefully if QNNExecutionProvider (Snapdragon NPU) is absent.
-
-Dependencies:
-    pip install onnxruntime==1.18.0 transformers==4.* numpy
-"""
+# ── stdlib / third-party ──────────────────────────────────────────────
 from pathlib import Path
-import os, threading
-import numpy as np
-import onnxruntime as ort
-from transformers import AutoTokenizer
+import os, numpy as np, onnxruntime as ort
+from transformers import CLIPTokenizer
+from PIL import Image
+# import soundfile as sf
+import librosa
 
-BASE_DIR   = Path(__file__).resolve().parent
-MODEL_DIR   = BASE_DIR / Path("models/all-MiniLM-L6-v2-onnx")
-MODEL_PATH  = MODEL_DIR / "model.onnx"
-MAX_LEN     = 256
-STRIDE      = 128
-BATCH_SIZE  = 16
+# ── MODEL LOCATIONS ───────────────────────────────────────────────────
+FULL_BASE = Path(__file__).parent / "models" / "clip" / "clip_full_int8_qdq.onnx"
+FULL_CTX  = FULL_BASE.with_name(FULL_BASE.stem + "_ctx.onnx")
+QNN_DLL   = "QnnHtp.dll"
 
-if not MODEL_DIR.is_dir():
-    # You can raise, log, or exit here
-    raise FileNotFoundError(f"Model directory not found: {MODEL_DIR}")
+def _load_full_session() -> ort.InferenceSession:
+    so = ort.SessionOptions()
+    if FULL_CTX.exists():
+        model_path   = FULL_CTX.as_posix()
+        providers    = ["QNNExecutionProvider"]
+        prov_options = [{"backend_path": QNN_DLL}]
+    else:
+        model_path   = FULL_BASE.as_posix()
+        providers    = ["QNNExecutionProvider", "CPUExecutionProvider"]
+        prov_options = [{"backend_path": QNN_DLL}, {}]
+        so.add_session_config_entry("ep.context_enable",     "1")
+        so.add_session_config_entry("ep.context_embed_mode", "1")
+        so.add_session_config_entry("ep.context_file_path",  FULL_CTX.as_posix())
+    return ort.InferenceSession(
+        model_path,
+        sess_options    = so,
+        providers       = providers,
+        provider_options= prov_options
+    )
 
-# ---------- model & tokenizer are global singletons -------------------------
-_tokenizer   = AutoTokenizer.from_pretrained(MODEL_DIR, local_files_only=True)
-_session     = None
-_session_lck = threading.Lock()
+# one singleton for the full CLIP
+_SESSION = _load_full_session()
 
+print(f"🖼️ Image Session Inputs : {[(inp.name, inp.shape, inp.type) for inp in _SESSION.get_inputs()]}")
+print(f"🏷️ Image Session Outputs: {[(out.name, out.shape, out.type) for out in _SESSION.get_outputs()]}")
 
-def _get_session() -> ort.InferenceSession:
-    global _session
-    with _session_lck:
-        if _session is not None:
-            return _session
-        providers = [
-            ("QNNExecutionProvider", {"backend_path": "QnnHtp.dll"}),
-            "CUDAExecutionProvider",
-            "CPUExecutionProvider",
-        ]
-        tried, ok = [], None
-        for p in providers:
-            try:
-                _session = ort.InferenceSession(
-                    MODEL_PATH.as_posix(),
-                    sess_options=ort.SessionOptions(),
-                    providers=[p] if isinstance(p, str) else [p[0]],
-                    provider_options=[{}] if isinstance(p, str) else [p[1]],
-                )
-                ok = p[0] if isinstance(p, tuple) else p
-                break
-            except Exception:
-                tried.append(p[0] if isinstance(p, tuple) else p)
-        if _session is None:
-            raise RuntimeError(f"ONNX providers failed: {tried}")
-        print(f"[Embedder] using {ok}")
-        return _session
+# ── TOKENIZER (unchanged) ────────────────────────────────────────────
+TOKENIZER = CLIPTokenizer.from_pretrained(
+    "openai/clip-vit-base-patch32",
+    cache_dir=str(Path(__file__).parent.parent / "models"),
+    local_files_only=False
+)
 
+# inputs = [(inp.name, inp.shape, inp.type) for inp in _IMG_SESS.get_inputs()]
+# outputs = [(out.name, out.shape, out.type) for out in _IMG_SESS.get_outputs()]
+# print(f"🖼️ Image Session Inputs : {inputs}")
+# print(f"🏷️ Image Session Outputs: {outputs}")
 
-# ---------- helper ----------------------------------------------------------
-def _chunk(text: str) -> list[list[int]]:
-    toks = _tokenizer.encode(text, add_special_tokens=True)
-    out  = []
-    for i in range(0, len(toks), STRIDE):
-        win = toks[i : i + MAX_LEN]
-        win += [_tokenizer.pad_token_id] * (MAX_LEN - len(win))
-        out.append(win)
-        if i + MAX_LEN >= len(toks):
-            break
-    return out or [[_tokenizer.pad_token_id] * MAX_LEN]
-
-
-# ---------- public API ------------------------------------------------------
-def embed_text(text: str) -> np.ndarray:
-    sess   = _get_session()
-    ids_nm_tt = [i.name for i in sess.get_inputs()]   # usually id,mask,token-type
-    chunks = _chunk(text)
-    embs   = []
-    for i in range(0, len(chunks), BATCH_SIZE):
-        batch = np.array(chunks[i : i + BATCH_SIZE], dtype=np.int64)
-        mask  = (batch != _tokenizer.pad_token_id).astype(np.int64)
-        tt    = np.zeros_like(batch, dtype=np.int64)
-        # model’s 2nd output is pooled sentence embedding (MiniLM export)
-        out = sess.run(None, {ids_nm_tt[0]: batch,
-                              ids_nm_tt[1]: mask,
-                              ids_nm_tt[2]: tt})[1]
-        embs.append(out)
-    mat = np.vstack(embs)                       # (n_chunks, 384)
-    mat /= (np.linalg.norm(mat, axis=1, keepdims=True) + 1e-12)
-    v = mat.mean(axis=0)
+# ── L2 helper ─────────────────────────────────────────────────────────
+# ── L2 helper ─────────────────────────────────────────────────────────
+def _l2(v: np.ndarray) -> np.ndarray:
     return v / (np.linalg.norm(v) + 1e-12)
+
+# ── TEXT EMBEDDING ────────────────────────────────────────────────────
+def embed_text(text: str) -> np.ndarray:
+    """
+    Feeds only the text inputs into the full CLIP ONNX and grabs the
+    512-D text embedding (now at outputs[2]).
+    """
+    toks = TOKENIZER(
+        text,
+        return_tensors="np",
+        padding="max_length",
+        truncation=True,
+        max_length=77,
+    )
+    input_ids      = toks["input_ids"].astype(np.int64)
+    attention_mask = toks["attention_mask"].astype(np.int64)
+    # dummy image to satisfy the ONNX inputs
+    dummy_img = np.zeros((1, 3, 224, 224), dtype=np.float32)
+
+    # run everything and pick output index 2 (the pooled text_embeds)
+    outputs = _SESSION.run(
+        None,
+        {
+            "input_ids":      input_ids,
+            "attention_mask": attention_mask,
+            "pixel_values":   dummy_img,
+        },
+    )
+    emb512 = outputs[2][0]   # outputs[2] has shape (1,512)
+
+    return _l2(emb512)
+
+
+# ── IMAGE EMBEDDING ───────────────────────────────────────────────────
+def embed_image(img) -> np.ndarray:
+    """
+    Feeds only the image input into the full CLIP ONNX and grabs the
+    512-D image embedding (now at outputs[3]).
+    """
+    if isinstance(img, (str, Path)):
+        img = Image.open(img)
+    arr = np.asarray(
+        img.convert("RGB").resize((224, 224), Image.BICUBIC),
+        dtype=np.float32
+    ) / 255.0
+    arr = ((arr.transpose(2, 0, 1) - 0.5) / 0.5)[None]  # (1,3,224,224)
+
+    # dummy text inputs
+    dummy_ids  = np.zeros((1, 77), dtype=np.int64)
+    dummy_mask = np.zeros((1, 77), dtype=np.int64)
+
+    outputs = _SESSION.run(
+        None,
+        {
+            "pixel_values":   arr,
+            "input_ids":      dummy_ids,
+            "attention_mask": dummy_mask,
+        },
+    )
+    emb512 = outputs[3][0]   # outputs[3] has shape (1,512)
+
+    return _l2(emb512)
+
+
+# ── AUDIO EMBEDDING ───────────────────────────────────────────────────
+def embed_audio(wav_path: str, *, sr=16_000, sec=5) -> np.ndarray:
+    # y, _ = sf.read(wav_path) Fix ARM64 compability for soundfile
+    y = None
+    if y.ndim > 1:
+        y = y.mean(axis=1)
+    y = librosa.util.fix_length(y, sec * sr)
+    mel = librosa.feature.melspectrogram(
+        y=y, sr=sr, n_fft=1024, hop_length=320, n_mels=128, fmax=8000
+    )
+    db   = librosa.power_to_db(mel, ref=np.max)
+    norm = (db - db.min()) / (db.max() - db.min() + 1e-9)
+    rgb  = np.stack([norm * 255] * 3, -1).astype(np.uint8)
+    img  = Image.fromarray(rgb).resize((224, 224), Image.BICUBIC)
+    return embed_image(img)
