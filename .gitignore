@@ -4,4 +4,5 @@ __pycache__
 
 # Dataset
 latent_search/raw_data
+latent_search/test_data
 
