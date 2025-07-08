@@ -101,6 +101,9 @@ def apply_win11_theme(
             font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
             font-size: 16px;
         }}
+        #central_widget {{
+            background-color: rgba(255,255,255,0.2);
+        }}
         QLineEdit {{
             background-color: rgba(255,255,255,0.03);
             border: 1px solid {border_color};
@@ -113,7 +116,7 @@ def apply_win11_theme(
             background-color: rgba(255,255,255,0.04);
         }}
         QPushButton:hover {{
-            background-color: rgba(255,255,255,1.0);
+            background-color: rgba(255,255,255,0.1);
         }}
     """
     widget.setStyleSheet(STYLE)

@@ -202,6 +202,7 @@ class SearchApp(QMainWindow):
         # Central Widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
+        central_widget.setObjectName("central_widget")
         main_layout = QVBoxLayout(central_widget)
 
         # Search Input and Button
