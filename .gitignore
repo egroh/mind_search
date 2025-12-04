@@ -6,3 +6,15 @@ __pycache__
 latent_search/raw_data
 latent_search/test_data
 
+# Generated Files
+*.db
+*.db-shm
+*.db-wal
+embeddings/
+sample_extra/
+__pycache__/
+*.pdf
+latent_search/model_preprocessing/onnx/
+latent_search/models/clip/
+onnx/
+submission/
